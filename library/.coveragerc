@@ -1,0 +1,5 @@
+[run]
+source = as7343
+omit =
+    .tox/*
+    as7343/__main__.py
