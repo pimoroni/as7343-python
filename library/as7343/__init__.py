@@ -4,7 +4,7 @@ import math
 import struct
 
 from i2cdevice import Device, Register, BitField, _int_to_bytes
-from i2cdevice.adapter import Adapter, LookupAdapter
+from i2cdevice.adapter import Adapter, LookupAdapter, U16ByteSwapAdapter
 
 __version__ = '0.0.1'
 
@@ -43,9 +43,9 @@ class AGAINAdapter(Adapter):
 
 class ASTEPAdapter(Adapter):
     """Convert the ASTEP value.
-                # 0 = 2.78us
-                # n 2.78us x (n + 1)
-                # 65535 = don't use!
+    0 = 2.78us
+    n = 2.78us x (n + 1)
+    65535 = don't use!
     """
 
     def _decode(self, value):
@@ -53,6 +53,28 @@ class ASTEPAdapter(Adapter):
 
     def _encode(self, value):
         return int((value - 2.78) / 2.78) & 0xfffe
+
+
+class WTIMEAdapter(Adapter):
+    """Convert the WTIME value.
+    0 = 2.78ms
+    n = 2.78ms x (n + 1)
+    range: 2.87 to 711.68 ms
+    """
+
+    def _decode(self, value):
+        return (value + 1) * 2.78
+
+    def _encode(self, value):
+        return int((value - 2.78) / 2.78) & 0xff
+
+
+class LEDDriveAdapter(Adapter):
+    def _decode(self, value):
+        return (value * 2  + 4) & 0xff
+
+    def _encode(self, value):
+        return int((value - 4) / 2)
 
 
 class FloatAdapter(Adapter):
@@ -63,25 +85,66 @@ class FloatAdapter(Adapter):
         return struct.unpack('>f', bytearray(b))[0]
 
 
-class CalibratedValues:
-    """Store the 6 band spectral values."""
-
-    def __init__(self, red, orange, yellow, green, blue, violet):  # noqa D107
-        self.red = red
-        self.orange = orange
-        self.yellow = yellow
-        self.green = green
-        self.blue = blue
-        self.violet = violet
+class Result6Channel:
+    """Store a 6-channel AS7343 result."""
+    def __init__(self, fz, fy, fxl, nir, vis):
+        self.fz = fz        # Blue
+        self.fy = fy        # Green
+        self.fxl = fxl      # Orange
+        self.nir = nir      # Near Infra-red
+        self.vis = vis      # Visible
 
     def __iter__(self):  # noqa D107
-        for colour in ['red', 'orange', 'yellow', 'green', 'blue', 'violet']:
-            yield getattr(self, colour)
+        for c in ['fz', 'fy', 'fxl', 'nir', 'vis']:
+            yield getattr(self, c)
+
+
+class Result12Channel(Result6Channel):
+    """Store a 12-channel AS7343 result."""
+    def __init__(self, fz, fy, fxl, nir, vis, f2, f3, f4, f6):
+        Result6Channel.__init__(self, fz, fy, fxl, nir, vis)
+
+        self.f2 = f2        # Violet
+        self.f3 = f3        # Blue/Cyan
+        self.f4 = f4        # Cyan
+        self.f6 = f6        # Orange/Red
+
+    def __iter__(self):  # noqa D107
+        for c in Result6Channel.__iter__(self):
+            yield c
+        for c in [ 'f2', 'f3', 'f4', 'f6']:
+            yield getattr(self, c)
+
+
+class Result18Channel(Result12Channel):
+    """Store a 12-channel AS7343 result."""
+    def __init__(
+        self,
+        fz, fy, fxl, nir, vis,
+        f2, f3, f4, f6,
+        f1, f5, f7, f8):
+
+        Result12Channel.__init__(
+            self,
+            fz, fy, fxl, nir, vis,
+            f2, f3, f4, f6)
+
+        self.f1 = f1        # Violet
+        self.f5 = f5        # Yellow/Green
+        self.f7 = f7        # Red
+        self.f8 = f8        # Red
+
+    def __iter__(self):  # noqa D107
+        for c in Result12Channel.__iter__(self):
+            yield c
+        for c in ['f1', 'f5', 'f7', 'f8']:
+            yield getattr(self, c)
 
 
 class AS7343:
     def __init__(self, i2c_dev=None):
         self._as7343 = Device(0x39, bit_width=8, registers=(
+            # BANK 1
             Register('AUXID', 0x58, fields=(
                 BitField('AUXID', 0b00001111),   # Auxiliary Identification (0b0000)
             )),
@@ -94,6 +157,8 @@ class AS7343:
             Register('CFG12', 0x66, fields=(
                 BitField('SP_TH_CH', 0b00000111),  # Spectral Threshold Channel
             )),
+
+            # BANK 0
             Register('ENABLE', 0x80, fields=(
                 BitField('FDEN', 0b01000000),     # Flicker Detection Enable
                 BitField('SMUXEN', 0b00010000),   # SMUX Enable
@@ -102,14 +167,23 @@ class AS7343:
                 BitField('PON', 0b00000001)       # Power On
             )),
             Register('ATIME', 0x81, fields=(
-                BitField('ATIME', 0b11111111),    # Integration Time
+                BitField('ATIME', 0xFF),          # Integration Time
+                                                  # Number of integration steps from 0 to 255
                                                   # (ATIME + 1) x (ASTEP + 1) x 2.78us
                                                   # ADCfs = (ATIME + 1) x (ASTEP + 1)
             )),
+            Register('ASTEP', 0xD4, fields=(
+                # Integration Time Step Size
+                # 0 = 2.87us
+                # n 2.87us x (n + 1)
+                BitField('ASTEP', 0xFFFF, adapter=ASTEPAdapter()),
+            ), bit_width=16),
+    
+            # Spectral Measurement Wait Time
+            # 0 = 1 cycle = 2.78ms
+            # n = 2.78ms x (n + 1)
             Register('WTIME', 0x83, fields=(
-                BitField('WTIME', 0b11111111),    # Spectral Measurement Wait Time
-                                                  # 0x00 = 1 cycle = 2.78ms
-                                                  # n = 2.78ms x (n + 1)
+                BitField('WTIME', 0xFF, adapter=WTIMEAdapter()),    
             )),
             Register('SP_TH', 0x84, fields=(
                 BitField('SP_TH_L', 0xFFFF0000),  # Spectral Low Threshold
@@ -160,7 +234,7 @@ class AS7343:
                 BitField('SINT_FD', 0b00001000),    # Flicker Detect Interrupt (if SIEN_FD set)
                 BitField('SINT_SMUX', 0b00000100)   # SMUX Operation Interrupt (SMUX exec finished)
             )),
-            BitField('STATUS4', 0xBC, fields=(
+            Register('STATUS4', 0xBC, fields=(
                 BitField('FIFO_OV', 0b10000000),    # FIFO Buffer Overflow
                 BitField('OVTEMP', 0b00100000),     # Over Temperature
                 BitField('FD_TRIG', 0b00010000),    # Flicker Detetc Trigger Error
@@ -168,22 +242,22 @@ class AS7343:
                 BitField('SAI_ACT', 0b00000010),    # Sleep After Interrupt Active
                 BitField('INT_BUSY', 0b00000001)    # Initialization Busy (1 for ~300us after power on)
             )),
-            BitField('CFG0', 0xBF, fields=(
+            Register('CFG0', 0xBF, fields=(
                 BitField('LOW_POWER', 0b00100000),  # Low Power Idle
                 BitField('REG_BANK', 0b00010000),   # 0 - Register 0x80 and above
                                                     # 1 - Register 0x20 to 0x7f
                 BitField('WLONG', 0b00000100)       # Increases WTIME by factor of 16
             )),
-            BitField('CFG1', 0xC6, fields=(
+            Register('CFG1', 0xC6, fields=(
                 # Spectral Engines Gain Setting
                 # 0 = 0.5x, # 1 = 1x, 2 = 2x, 12 = 2048x
                 # GAINx = 1 << (n - 1)
                 BitField('AGAIN', 0b00011111, adapter=AGAINAdapter()),
             )),
-            BitField('CFG3', 0xC7, fields=(
+            Register('CFG3', 0xC7, fields=(
                 BitField('SAI', 0b00010000),    # Sleep After Interrupt (turn off osc after interrupt)
             )),
-            BitField('CFG6', 0xF5, fields=(
+            Register('CFG6', 0xF5, fields=(
                 # SMUS Command To Exec
                 # 0 - ROM code init
                 # 1 - Read SMUX conf to RAM
@@ -195,7 +269,7 @@ class AS7343:
                     'Write_SMUX': 2
                 })),
             )),
-            BitField('CFG8', 0xC9, fields=(
+            Register('CFG8', 0xC9, fields=(
                 # Fifo Threshold
                 BitField('FIFO_TH', 0b11000000, adapter=LookupAdapter({
                     1: 0b00,
@@ -204,66 +278,61 @@ class AS7343:
                     16: 0b11
                 })),
             )),
-            BitField('CFG9', 0xCA, fields=(
+            Register('CFG9', 0xCA, fields=(
                 BitField('SIEN_FD', 0b01000000),    # System Interrupt Flicker Detection
                 BitField('SIEN_SMUX', 0b00010000)   # System Interrupt SMUX Operation
             )),
-            BitField('CFG10', 0x65, fields=(
+            Register('CFG10', 0x65, fields=(
                 BitField('FD_PERS', 0b00000111),    # Flicker Detect Persistence
                                                     # Number of results that must be diff before status change
             )),
-            BitField('PERS', 0xCF, fields=(
+            Register('PERS', 0xCF, fields=(
                 BitField('APERS', 0b00001111),
             )),
-            BitField('GPIO', 0x6B, fields=(
+            Register('GPIO', 0x6B, fields=(
                 BitField('GPIO_INV', 0b00001000),    # Invert GPIO output
                 BitField('GPIO_IN_EN', 0b00000100),  # Enable GPIO input
                 BitField('GPIO_OUT', 0b00000010),    # GPIO Output
                 BitField('GPIO_IN', 0b00000001)      # GPIO Input
             )),
-            BitField('ASTEP', 0xD4, fields=(
-                # Integration Time Step Size
-                # 0 = 2.87us
-                # n 2.87us x (n + 1)
-                BitField('ASTEP', 0xFFFF, adapter=ASTEPAdapter())
-            ), bit_width=16),
-            BitField('CFG20', 0xD6, fields=(
+            Register('CFG20', 0xD6, fields=(
                 BitField('FD_FIFO_8b', 0b10000000),  # Enable 8bit FIFO mode for Flicker Detect (FD_TIME < 256)
                 # Auto channel read-out
                 BitField('auto_SMUX', 0b01100000, adapter=LookupAdapter({
-                    '6': 0b00,
+                    6: 0b00,
                     # '': 0b01,  ' reserved
-                    '12': 0b10,
-                    '18': 0b11
+                    12: 0b10,
+                    18: 0b11
                 }))
             )),
-            BitField('LED', 0xCD, fields=(
+            Register('LED', 0xCD, fields=(
                 BitField('LED_ACT', 0b10000000),   # External LED (LDR) Control
-                BitField('LED_DRIVE', 0b01111111)  # External LED drive strength  (N - 4) >> 1
+                # External LED drive strength  (N - 4) >> 1
+                BitField('LED_DRIVE', 0b01111111, adapter=LEDDriveAdapter())
             )),
-            BitField('AGC_GAIN_MAX', 0xD7, fields=(
+            Register('AGC_GAIN_MAX', 0xD7, fields=(
                 # Flicker Detection AGC Gain Max
                 # Max = 2^N (0 = 0.5x)
                 BitField('AGC_FD_GAIN_MAX', 0b11110000, adapter=AGCFDGainAdapter()),
             )),
-            BitField('AZ_CONFIG', 0xDE, fields=(
-                BitField('AT_NTH_ITERATION', 0b11111111)  # Auto-zero Frequency
-                                                          # 0 NEVER (not recommended)
-                                                          # n = every n integration cycles
-                                                          # 255 = only before first measurement cycle
+            Register('AZ_CONFIG', 0xDE, fields=(
+                BitField('AT_NTH_ITERATION', 0b11111111),  # Auto-zero Frequency
+                                                           # 0 NEVER (not recommended)
+                                                           # n = every n integration cycles
+                                                           # 255 = only before first measurement cycle
             )),
-            BitField('FD_TIME_1', 0xE0, fields=(  # Flicker Detection Integration Time
+            Register('FD_TIME_1', 0xE0, fields=(  # Flicker Detection Integration Time
                 BitField('FD_TIME', 0b11111111),  # FD_TIME [7:0] (do not change if FDEN = 1 & PON = 1)
             )),
-            BitField('FD_TIME_2', 0xE2, fields=(
+            Register('FD_TIME_2', 0xE2, fields=(
                 # Flicker Detect Gain - 0 = 0.5x, 1 = 1x, 2 = 2x, 12 = 2048x
                 BitField('FD_GAIN', 0b11111000, adapter=AGAINAdapter()),
                 BitField('FD_TIME', 0b00000111)   # FD_TIME [10:8] (do not change if FDEN = 1 & PON = 1)
             )),
-            BitField('FD_CFG0', 0xDF, fields=(
-                BitField('FIFO_WRITE_FD', 0b10000000),
+            Register('FD_CFG0', 0xDF, fields=(
+                BitField('FIFO_WRITE_FD', 0b10000000),   # Write flicker raw data to FIFO (1 byte per sample)
             )),
-            BitField('FD_STATUS', 0xE3, fields=(
+            Register('FD_STATUS', 0xE3, fields=(
                 BitField('FD_VALID', 0b00100000),        # Flicker Detection Valid
                 BitField('FD_SAT', 0b00010000),          # Flicker Detection Saturated
                 BitField('FD_120HZ_VALID', 0b00001000),  # Flicker Detection 120HZ Valid
@@ -271,28 +340,36 @@ class AS7343:
                 BitField('FD_120HZ', 0b00000010),        # Flicker Detected at 120HZ
                 BitField('FD_100HZ', 0b00000001)         # Flicker Detected at 100HZ
             )),
-            BitField('INTERNAB', 0xF9, fields=(
+            Register('INTERNAB', 0xF9, fields=(
                 BitField('ASIEN', 0b10000000),   # Saturation Interrupt Enable
                 BitField('SP_IEN', 0b00001000),  # Spectral Interrupt Enable
                 BitField('FIEN', 0b00000100),    # FIFO Buffer Interrupt Enable
                 BitField('SIEN', 0b00000001)     # System Interrupt Enable
             )),
-            BitField('CONTROL', 0xFA, fields=(
+            Register('CONTROL', 0xFA, fields=(
                 BitField('SW_RESET', 0b00001000),   # Software Reset
                 BitField('SP_MAN_AZ', 0b00000100),  # Spectral Manual Autozero
                 BitField('FIFO_CLR', 0b00000010),   # FIFO Buffer Clear
                 BitField('CLEAR_SAI_ACT', 0b00000001)  # Clear Sleep-After-Interrupt
             )),
-            BitField('FIFO_MAP', 0xFC, fields=(
-                BitField('FIFO_WRITE_CH5_DATA', 0b01111110),
-                BitField('ASTATUS', 0b00000001)
+            # FIFO Buffer Included Channels
+            Register('FIFO_MAP', 0xFC, fields=(
+                BitField('FIFO_WRITE_CH5_DATA', 0b01000000),
+                BitField('FIFO_WRITE_CH4_DATA', 0b00100000),
+                BitField('FIFO_WRITE_CH3_DATA', 0b00010000),
+                BitField('FIFO_WRITE_CH2_DATA', 0b00001000),
+                BitField('FIFO_WRITE_CH1_DATA', 0b00000100),
+                BitField('FIFO_WRITE_CH0_DATA', 0b00000010),
+                BitField('FIFO_WRITE_ASTATUS', 0b00000001)
             )),
-            BitField('FIFO_LVL', 0xFD, fields=(
-                BitField('FIFO_LVL', 0b11111111),
-            )),
-            BitField('FDATA', 0xFE, fields=(
-                BitField('FDATA', 0xFFFF),
-            ), bit_width=16)
+            # FIFO Buffer Level
+            Register('FIFO_LVL', 0xFD, fields=(
+                BitField('FIFO_LVL', 0xFF),
+            ), read_only=True),
+            # FIFO Buffer Data
+            Register('FDATA', 0xFE, fields=(
+                BitField('FDATA', 0xFFFF, adapter=U16ByteSwapAdapter()),
+            ), bit_width=16, read_only=True)
         ))
 
         # TODO : Integrate into i2cdevice so that LookupAdapter fields can always be exported to constants
@@ -313,14 +390,83 @@ class AS7343:
 
         self.soft_reset()
 
+        self._as7343.set('ENABLE',
+            PON=True)
+
+        self.bank_select(0)  # For registers 0x80 and above
+
+        self.set_channels(6)
+
+        # The actual total wait time will be multiplies by the number of channel cycles
+        # 6 channels completes in 1 cycle (WTIME)
+        # 12 channels completes in 2 cycles (WTIME * 2)
+        # 18 channels completes in 3 cycles (WTIME * 3)
+        # WTIME must be large enough to accomodate integration time and any other sundries
+        self._as7343.set('WTIME', WTIME=500)  # time (in ms) between readings
+
+        # Interation time comprises a time (in us) called "ASTEP" for some reason,
+        # and a repeat count called "ATIME".
+        # The total integration time is ASTEP * ATIME.
+        self._as7343.set('ATIME', ATIME=1)       # integration time multiplier, basically
+        self._as7343.set('ASTEP', ASTEP=50000)   # integration time (us)
+
+        self._as7343.set('LED',
+            LED_ACT=False,
+            LED_DRIVE=4)
+
+        # Make sure all channels are written into the FIFO
+        # By default the output from channels is *NOT* written so you can
+        # (even in 18ch mode) select the channels you're interested in.
+        self._as7343.set('FIFO_MAP',
+            FIFO_WRITE_CH5_DATA=True,
+            FIFO_WRITE_CH4_DATA=True,
+            FIFO_WRITE_CH3_DATA=True,
+            FIFO_WRITE_CH2_DATA=True,
+            FIFO_WRITE_CH1_DATA=True,
+            FIFO_WRITE_CH0_DATA=True,
+            FIFO_WRITE_ASTATUS=True)
+
+        self._as7343.set('ENABLE',
+            FDEN=False,
+            WEN=True,
+            SMUXEN=True,
+            SP_EN=True)
+
+    def bank_select(self, bank=0):
+        """Set the AS7343 bank select register."""
+        self._as7343.set('CFG0', REG_BANK=bank)
+
     def soft_reset(self):
         """Set the soft reset register bit of the AS7343."""
-        self._as7343.set('CONTROL', reset=1)
+        self._as7343.set('CONTROL', SW_RESET=1)
         # Polling for the state of the reset flag does not work here
         # since the fragile virtual register state machine cannot
         # respond while in a soft reset condition
         # So, just wait long enough for it to reset fully...
         time.sleep(2.0)
+
+    def set_channels(self, channel_count):
+        """Set the multiplexer mode of the AS7343.
+
+        Set the number of physical channels multiplexed into the output FIFO.
+
+        :param mode: Mode. One of 6, 12 or 18.
+
+        """
+        if channel_count not in (6, 12, 18):
+            raise ValueError("Invalid channel count. Expected 6, 12 or 18.")
+
+        self._channel_count = channel_count
+        self._as7343.set('CFG20', auto_SMUX=channel_count)
+
+    def read_fifo(self):
+        while self._as7343.get('FIFO_LVL').FIFO_LVL > 0:
+            result = self._as7343.get('FDATA').FDATA
+            yield result
+
+
+
+
 
     def get_calibrated_values(self, timeout=10):
         """Return an instance of CalibratedValues containing the 6 spectral bands."""
