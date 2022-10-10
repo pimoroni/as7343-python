@@ -1,5 +1,6 @@
 """Library for the AS7343 Visble Light Spectral Sensor."""
 import time
+import math
 import struct
 
 from i2cdevice import Device, Register, BitField, _int_to_bytes
@@ -8,14 +9,50 @@ from i2cdevice.adapter import Adapter, LookupAdapter
 __version__ = '0.0.1'
 
 
-class FWVersionAdapter(Adapter):
-    """Convert the AS7343 firmware version number to a human-readable string."""
+class AGCFDGainAdapter(Adapter):
+    """Convert the AGC gain value.
+
+    2^N (0 = 0.5x)"""
 
     def _decode(self, value):
-        major_version = (value & 0x00F0) >> 4
-        minor_version = ((value & 0x000F) << 2) | ((value & 0b1100000000000000) >> 14)
-        sub_version = (value & 0b0011111100000000) >> 8
-        return '{}.{}.{}'.format(major_version, minor_version, sub_version)
+        if value == 0:
+            return 0.5
+        return 2 << int(value)
+
+    def _encode(self, value):
+        if value == 0.5:
+            return 0
+        return value.bit_length() - 2
+
+
+class AGAINAdapter(Adapter):
+    """Convert the AGC gain value.
+
+    GAINx = 1 << (n - 1)"""
+
+    def _decode(self, value):
+        if value == 0:
+            return 0.5
+        return 1 << int(value - 1)
+
+    def _encode(self, value):
+        if value == 0.5:
+            return 0
+        return int(value).bit_length() & 0x1f
+
+
+class ASTEPAdapter(Adapter):
+    """Convert the ASTEP value.
+                # 0 = 2.78us
+                # n 2.78us x (n + 1)
+                # 65535 = don't use!
+    """
+
+    def _decode(self, value):
+        return (value + 1) * 2.78
+
+    def _encode(self, value):
+        return int((value - 2.78) / 2.78) & 0xfffe
 
 
 class FloatAdapter(Adapter):
@@ -24,16 +61,6 @@ class FloatAdapter(Adapter):
     def _decode(self, value):
         b = _int_to_bytes(value, 4)
         return struct.unpack('>f', bytearray(b))[0]
-
-
-class IntegrationTimeAdapter(Adapter):
-    """Scale integration time in ms to LSBs."""
-
-    def _decode(self, value):
-        return value / 2.8
-
-    def _encode(self, value):
-        return int(value * 2.8) & 0xff
 
 
 class CalibratedValues:
@@ -148,29 +175,34 @@ class AS7343:
                 BitField('WLONG', 0b00000100)       # Increases WTIME by factor of 16
             )),
             BitField('CFG1', 0xC6, fields=(
-                BitField('AGAIN', 0b00011111),  # Spectral Engines Gain Setting
-                                                # 0 = 0.5x
-                                                # 1 = 1x
-                                                # 2 = 2x
-                                                # 12 = 2048x
-                                                # GAINx = 1 << (n - 1)
+                # Spectral Engines Gain Setting
+                # 0 = 0.5x, # 1 = 1x, 2 = 2x, 12 = 2048x
+                # GAINx = 1 << (n - 1)
+                BitField('AGAIN', 0b00011111, adapter=AGAINAdapter()),
             )),
             BitField('CFG3', 0xC7, fields=(
                 BitField('SAI', 0b00010000),    # Sleep After Interrupt (turn off osc after interrupt)
             )),
             BitField('CFG6', 0xF5, fields=(
-                BitField('SMUX_CMD', 0b00011000),   # SMUS Command To Exec
-                                                    # 0 - ROM code init
-                                                    # 1 - Read SMUX conf to RAM
-                                                    # 2 - Write SMUS conf from RAM
-                                                    # 3 - Reserved
+                # SMUS Command To Exec
+                # 0 - ROM code init
+                # 1 - Read SMUX conf to RAM
+                # 2 - Write SMUX conf from RAM
+                # 3 - Reserved
+                BitField('SMUX_CMD', 0b00011000, adapter=LookupAdapter({
+                    'ROM_init': 0,
+                    'Read_SMUX': 1,
+                    'Write_SMUX': 2
+                })),
             )),
             BitField('CFG8', 0xC9, fields=(
-                BitField('FIFO_TH', 0b11000000),    # Fifo Threshold
-                                                    # 0 = 1
-                                                    # 1 = 4
-                                                    # 2 = 8
-                                                    # 4 = 16
+                # Fifo Threshold
+                BitField('FIFO_TH', 0b11000000, adapter=LookupAdapter({
+                    1: 0b00,
+                    4: 0b01,
+                    8: 0b10,
+                    16: 0b11
+                })),
             )),
             BitField('CFG9', 0xCA, fields=(
                 BitField('SIEN_FD', 0b01000000),    # System Interrupt Flicker Detection
@@ -190,24 +222,29 @@ class AS7343:
                 BitField('GPIO_IN', 0b00000001)      # GPIO Input
             )),
             BitField('ASTEP', 0xD4, fields=(
-                BitField('ASTEP', 0xFFFF)            # NIntegration Time Step Size
-                                                     # 0 = 2.87us
-                                                     # n 2.87us x (n + 1)
+                # Integration Time Step Size
+                # 0 = 2.87us
+                # n 2.87us x (n + 1)
+                BitField('ASTEP', 0xFFFF, adapter=ASTEPAdapter())
             ), bit_width=16),
             BitField('CFG20', 0xD6, fields=(
                 BitField('FD_FIFO_8b', 0b10000000),  # Enable 8bit FIFO mode for Flicker Detect (FD_TIME < 256)
-                BitField('auto_SMBUX', 0b01100000)   # Auto channel read-out
-                                                     # 1 - Reserved
-                                                     # 2 - 12 channel
-                                                     # 3 - 18 Channel
+                # Auto channel read-out
+                BitField('auto_SMUX', 0b01100000, adapter=LookupAdapter({
+                    '6': 0b00,
+                    # '': 0b01,  ' reserved
+                    '12': 0b10,
+                    '18': 0b11
+                }))
             )),
             BitField('LED', 0xCD, fields=(
                 BitField('LED_ACT', 0b10000000),   # External LED (LDR) Control
                 BitField('LED_DRIVE', 0b01111111)  # External LED drive strength  (N - 4) >> 1
             )),
             BitField('AGC_GAIN_MAX', 0xD7, fields=(
-                BitField('AGC_FD_GAIN_MAX', 0b11110000),  # Flicker Detection AGC Gain Max
-                                                          # Max = 2^N (0 = 0.5x)
+                # Flicker Detection AGC Gain Max
+                # Max = 2^N (0 = 0.5x)
+                BitField('AGC_FD_GAIN_MAX', 0b11110000, adapter=AGCFDGainAdapter()),
             )),
             BitField('AZ_CONFIG', 0xDE, fields=(
                 BitField('AT_NTH_ITERATION', 0b11111111)  # Auto-zero Frequency
@@ -216,18 +253,19 @@ class AS7343:
                                                           # 255 = only before first measurement cycle
             )),
             BitField('FD_TIME_1', 0xE0, fields=(  # Flicker Detection Integration Time
-                BitField('FD_TIME', 0b11111111),  # FD_TIME [7:0]
+                BitField('FD_TIME', 0b11111111),  # FD_TIME [7:0] (do not change if FDEN = 1 & PON = 1)
             )),
             BitField('FD_TIME_2', 0xE2, fields=(
-                BitField('FD_GAIN', 0b11110000),
-                BitField('FD_TIME', 0b00001111)   # FD_TIME [10:8] (do not change if FDEN = 1 & PON = 1)
+                # Flicker Detect Gain - 0 = 0.5x, 1 = 1x, 2 = 2x, 12 = 2048x
+                BitField('FD_GAIN', 0b11111000, adapter=AGAINAdapter()),
+                BitField('FD_TIME', 0b00000111)   # FD_TIME [10:8] (do not change if FDEN = 1 & PON = 1)
             )),
             BitField('FD_CFG0', 0xDF, fields=(
                 BitField('FIFO_WRITE_FD', 0b10000000),
             )),
             BitField('FD_STATUS', 0xE3, fields=(
-                BitField('FD_VALID', 0b00100000),   # Flicker Detection Valid
-                BitField('FD_SAT', 0b00010000),     # Flicker Detection Saturated
+                BitField('FD_VALID', 0b00100000),        # Flicker Detection Valid
+                BitField('FD_SAT', 0b00010000),          # Flicker Detection Saturated
                 BitField('FD_120HZ_VALID', 0b00001000),  # Flicker Detection 120HZ Valid
                 BitField('FD_100HZ_VALID', 0b00000100),  # Flicker Detection 100HZ Valid
                 BitField('FD_120HZ', 0b00000010),        # Flicker Detected at 120HZ
