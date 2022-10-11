@@ -1,24 +1,30 @@
+import time
 from as7343 import AS7343
 
 as7343 = AS7343()
 
-as7343.set_gain(64)
-as7343.set_integration_time(17.857)
-as7343.set_measurement_mode(2)
-as7343.set_illumination_led(1)
+as7343.set_gain(512)
+as7343.set_integration_time(100 * 1000)
+as7343.set_channels(18)
+as7343.set_illumination_led(True)
 
 try:
     while True:
-        values = as7343.get_calibrated_values()
+        values = as7343.get_data()
+        if values is None:
+            continue
+        data = values[0]
+        data.update(values[1])
+        data.update(values[2])
         print("""
-Red:    {}
-Orange: {}
-Yellow: {}
-Green:  {}
-Blue:   {}
-Violet: {}""".format(*values))
+Red:    {f7}
+Orange: {fxl}
+Yellow: {f5}
+Green:  {f4}
+Blue:   {f3}
+Violet: {f1}""".format(**data))
+
+        time.sleep(1.5)
 
 except KeyboardInterrupt:
-    as7343.set_measurement_mode(3)
-    as7343.set_illumination_led(0)
-
+    as7343.set_illumination_led(False)

@@ -1,12 +1,29 @@
 """Library for the AS7343 Visble Light Spectral Sensor."""
 import time
-import math
 import struct
 
 from i2cdevice import Device, Register, BitField, _int_to_bytes
 from i2cdevice.adapter import Adapter, LookupAdapter, U16ByteSwapAdapter
 
 __version__ = '0.0.1'
+
+
+PART_ID = 0b10000001
+
+COMPENSATION_GAIN = {
+    "F1": 1.84,
+    "F2": 6.03,
+    "FZ": 4.88,
+    "F3": 13.74,
+    "F4": 3.37,
+    "FY": 2.82,
+    "F5": 6.72,
+    "FXL": 2.22,
+    "F6": 3.17,
+    "F7": 1.95,
+    "F8": 12.25,
+    "NIR": 1.00,
+}
 
 
 class AGCFDGainAdapter(Adapter):
@@ -71,7 +88,7 @@ class WTIMEAdapter(Adapter):
 
 class LEDDriveAdapter(Adapter):
     def _decode(self, value):
-        return (value * 2  + 4) & 0xff
+        return (value * 2 + 4) & 0xff
 
     def _encode(self, value):
         return int((value - 4) / 2)
@@ -85,60 +102,99 @@ class FloatAdapter(Adapter):
         return struct.unpack('>f', bytearray(b))[0]
 
 
-class Result6Channel:
-    """Store a 6-channel AS7343 result."""
-    def __init__(self, fz, fy, fxl, nir, vis):
+class ResultCycle:
+    """Store a single AS7343 result cycle."""
+    def __init__(self, vis_tl, vis_br, astatus):
+        self.vis_tl = vis_tl
+        self.vis_br = vis_br
+        self.astatus = (astatus >> 8) & 0b10001111
+        self.saturated = self.astatus & 0b10000000 > 0
+        self.gain = self.astatus & 0b00001111
+
+    def __iter__(self):  # noqa D107
+        for c in ['vis_tl', 'vis_br', 'saturated', 'gain']:
+            yield c, getattr(self, c)
+
+
+class ResultCycle1(ResultCycle):
+    """Store a 6-channel AS7343 auto SMUX cycle 1 result."""
+    def __init__(self, fz, fy, fxl, nir, vis_tl, vis_br, astatus):
+        ResultCycle.__init__(self, vis_tl, vis_br, astatus)
+
         self.fz = fz        # Blue
         self.fy = fy        # Green
         self.fxl = fxl      # Orange
         self.nir = nir      # Near Infra-red
-        self.vis = vis      # Visible
+
+        self.fz *= COMPENSATION_GAIN["FZ"]
+        self.fy *= COMPENSATION_GAIN["FY"]
+        self.fxl *= COMPENSATION_GAIN["FXL"]
+        self.nir *= COMPENSATION_GAIN["NIR"]
+
+        self.fz = int(self.fz)
+        self.fy = int(self.fy)
+        self.fxl = int(self.fxl)
+        self.nir = int(self.nir)
 
     def __iter__(self):  # noqa D107
-        for c in ['fz', 'fy', 'fxl', 'nir', 'vis']:
-            yield getattr(self, c)
+        for c in ['fz', 'fy', 'fxl', 'nir']:
+            yield c, getattr(self, c)
+        for c in ResultCycle.__iter__(self):
+            yield c
 
 
-class Result12Channel(Result6Channel):
-    """Store a 12-channel AS7343 result."""
-    def __init__(self, fz, fy, fxl, nir, vis, f2, f3, f4, f6):
-        Result6Channel.__init__(self, fz, fy, fxl, nir, vis)
+class ResultCycle2(ResultCycle):
+    """Store a 6-channel AS7343 auto SMUX cycle 2 result."""
+    def __init__(self, f2, f3, f4, f6, vis_tl, vis_br, astatus):
+        ResultCycle.__init__(self, vis_tl, vis_br, astatus)
 
         self.f2 = f2        # Violet
         self.f3 = f3        # Blue/Cyan
         self.f4 = f4        # Cyan
         self.f6 = f6        # Orange/Red
 
+        self.f2 *= COMPENSATION_GAIN["F2"]
+        self.f3 *= COMPENSATION_GAIN["F3"]
+        self.f4 *= COMPENSATION_GAIN["F4"]
+        self.f6 *= COMPENSATION_GAIN["F6"]
+
+        self.f2 = int(self.f2)
+        self.f3 = int(self.f3)
+        self.f4 = int(self.f4)
+        self.f6 = int(self.f6)
+
     def __iter__(self):  # noqa D107
-        for c in Result6Channel.__iter__(self):
+        for c in ['f2', 'f3', 'f4', 'f6']:
+            yield c, getattr(self, c)
+        for c in ResultCycle.__iter__(self):
             yield c
-        for c in [ 'f2', 'f3', 'f4', 'f6']:
-            yield getattr(self, c)
 
 
-class Result18Channel(Result12Channel):
-    """Store a 12-channel AS7343 result."""
-    def __init__(
-        self,
-        fz, fy, fxl, nir, vis,
-        f2, f3, f4, f6,
-        f1, f5, f7, f8):
-
-        Result12Channel.__init__(
-            self,
-            fz, fy, fxl, nir, vis,
-            f2, f3, f4, f6)
+class ResultCycle3(ResultCycle):
+    """Store an 6-channel AS7343 auto SMUX cycle 3 result."""
+    def __init__(self, f1, f5, f7, f8, vis_tl, vis_br, astatus):
+        ResultCycle.__init__(self, vis_tl, vis_br, astatus)
 
         self.f1 = f1        # Violet
         self.f5 = f5        # Yellow/Green
         self.f7 = f7        # Red
         self.f8 = f8        # Red
 
+        self.f1 *= COMPENSATION_GAIN["F1"]
+        self.f5 *= COMPENSATION_GAIN["F5"]
+        self.f7 *= COMPENSATION_GAIN["F7"]
+        self.f8 *= COMPENSATION_GAIN["F8"]
+
+        self.f1 = int(self.f1)
+        self.f5 = int(self.f5)
+        self.f7 = int(self.f7)
+        self.f8 = int(self.f8)
+
     def __iter__(self):  # noqa D107
-        for c in Result12Channel.__iter__(self):
-            yield c
         for c in ['f1', 'f5', 'f7', 'f8']:
-            yield getattr(self, c)
+            yield c, getattr(self, c)
+        for c in ResultCycle.__iter__(self):
+            yield c
 
 
 class AS7343:
@@ -178,12 +234,12 @@ class AS7343:
                 # n 2.87us x (n + 1)
                 BitField('ASTEP', 0xFFFF, adapter=ASTEPAdapter()),
             ), bit_width=16),
-    
+
             # Spectral Measurement Wait Time
             # 0 = 1 cycle = 2.78ms
             # n = 2.78ms x (n + 1)
             Register('WTIME', 0x83, fields=(
-                BitField('WTIME', 0xFF, adapter=WTIMEAdapter()),    
+                BitField('WTIME', 0xFF, adapter=WTIMEAdapter()),
             )),
             Register('SP_TH', 0x84, fields=(
                 BitField('SP_TH_L', 0xFFFF0000),  # Spectral Low Threshold
@@ -390,34 +446,36 @@ class AS7343:
 
         self.soft_reset()
 
-        self._as7343.set('ENABLE',
-            PON=True)
+        auxid, revid, id = self.get_version()
+
+        self._as7343.set('ENABLE', PON=True)
+
+        if id != PART_ID:
+            raise RuntimeError("Invalid part ID: 0x{:02x}, expected 0x{:02x}!".format(id, PART_ID))
 
         self.bank_select(0)  # For registers 0x80 and above
 
         self.set_channels(6)
 
-        # The actual total wait time will be multiplies by the number of channel cycles
-        # 6 channels completes in 1 cycle (WTIME)
-        # 12 channels completes in 2 cycles (WTIME * 2)
-        # 18 channels completes in 3 cycles (WTIME * 3)
-        # WTIME must be large enough to accomodate integration time and any other sundries
-        self._as7343.set('WTIME', WTIME=500)  # time (in ms) between readings
+        # ADC gain
+        self.set_gain(1024)
 
-        # Interation time comprises a time (in us) called "ASTEP" for some reason,
-        # and a repeat count called "ATIME".
-        # The total integration time is ASTEP * ATIME.
-        self._as7343.set('ATIME', ATIME=1)       # integration time multiplier, basically
-        self._as7343.set('ASTEP', ASTEP=50000)   # integration time (us)
+        self.set_measurement_time(500)
 
-        self._as7343.set('LED',
+        self.set_integration_time(27800)
+
+        self._as7343.set(
+            'LED',
             LED_ACT=False,
             LED_DRIVE=4)
 
         # Make sure all channels are written into the FIFO
         # By default the output from channels is *NOT* written so you can
         # (even in 18ch mode) select the channels you're interested in.
-        self._as7343.set('FIFO_MAP',
+        # There's not much point exposing this to the end-user, since in 2 and 3
+        # phase mode these channels will be muxed across multiple sensors...
+        self._as7343.set(
+            'FIFO_MAP',
             FIFO_WRITE_CH5_DATA=True,
             FIFO_WRITE_CH4_DATA=True,
             FIFO_WRITE_CH3_DATA=True,
@@ -426,7 +484,10 @@ class AS7343:
             FIFO_WRITE_CH0_DATA=True,
             FIFO_WRITE_ASTATUS=True)
 
-        self._as7343.set('ENABLE',
+        # self._as7343.set('FD_CFG0', FIFO_WRITE_FD=True)
+
+        self._as7343.set(
+            'ENABLE',
             FDEN=False,
             WEN=True,
             SMUXEN=True,
@@ -457,64 +518,103 @@ class AS7343:
             raise ValueError("Invalid channel count. Expected 6, 12 or 18.")
 
         self._channel_count = channel_count
+        self._read_cycles = int(channel_count / 6)
         self._as7343.set('CFG20', auto_SMUX=channel_count)
 
+    def get_data(self):
+        results = list(self.read_fifo())
+        if len(results) == self._read_cycles * 7:
+            if self._read_cycles == 3:
+                return (
+                    dict(ResultCycle1(*results[0:7])),
+                    dict(ResultCycle2(*results[7:14])),
+                    dict(ResultCycle3(*results[14:21])),
+                )
+            elif self._read_cycles == 2:
+                return (
+                    dict(ResultCycle1(*results[0:7])),
+                    dict(ResultCycle2(*results[7:14]))
+                )
+            elif self._read_cycles == 1:
+                return (
+                    dict(ResultCycle1(*results[0:7])),
+                )
+            else:
+                # Uh oh?
+                return None
+
+            return results
+
+        return None
+
     def read_fifo(self):
+        while self._as7343.get('FIFO_LVL').FIFO_LVL < self._read_cycles * 7:
+            time.sleep(0.001)
+
         while self._as7343.get('FIFO_LVL').FIFO_LVL > 0:
             result = self._as7343.get('FDATA').FDATA
             yield result
 
-
-
-
-
-    def get_calibrated_values(self, timeout=10):
-        """Return an instance of CalibratedValues containing the 6 spectral bands."""
-        t_start = time.time()
-        while self._as7343.get('CONTROL').data_ready == 0 and (time.time() - t_start) <= timeout:
-            pass
-        data = self._as7343.get('CALIBRATED_DATA')
-        return CalibratedValues(data.r, data.o, data.y, data.g, data.b, data.v)
-
     def set_gain(self, gain):
         """Set the gain amount of the AS7343.
 
-        :param gain: gain multiplier, one of 1, 3.7, 16 or 64
+        :param gain: gain multiplier, one of 0.5, 1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024 or 2048x
 
         """
-        self._as7343.set('CONTROL', gain_x=gain)
+        self._as7343.set('CFG1', AGAIN=gain)
 
-    def set_measurement_mode(self, mode):
-        """Set the AS7343 measurement mode.
+    def set_measurement_time(self, time_ms):
+        """Set the AS7343 sensor measurement time in milliseconds.
 
-        :param mode: 0-3
+        This time must be large enough to accomodate the sensor integration time.
+
+        The total final wait time will depend on the number of enabled read cycles.
+
+        6 channels needs 1 cycle, waits time_ms.
+        12 channels needs 2 cycles, waits time_ms * 2
+        18 channels needs 3 cycles, waits time_ms * 3
+
+        :param time_ms: Time in milliseconds from 0 to 711.68
 
         """
-        self._as7343.set('CONTROL', measurement_mode=mode)
+        self._as7343.set('WTIME', WTIME=time_ms)  # time (in ms) between readings
 
-    def set_integration_time(self, time_ms):
-        """Set the AS7343 sensor integration time in milliseconds.
+    def set_integration_time(self, time_us):
+        """Set the AS7343 sensor integration time in microseconds.
 
-        :param time_ms: Time in milliseconds from 0 to ~91
+        :param time_ms: Time in microseconds from 2.78us to 46639948.8us
 
         """
-        self._as7343.set('INTEGRATION_TIME', ms=time_ms)
+        # Interation time comprises a time (in us) called "ASTEP" for some reason,
+        # and a repeat count called "ATIME".
+        # The ADC full scale is (ASTEP + 1) * (ATIME + 1). (Saturates at 65535)
+
+        if time_us <= 182187.3:
+            self._as7343.set('ATIME', ATIME=0)         # integration time multiplier, basically
+            self._as7343.set('ASTEP', ASTEP=time_us)   # integration time (us)
+
+        elif time_us <= 182187.3 * 256:
+            orig_time_us = time_us
+            steps = 0
+            while time_us > 182187.3 * 256:
+                time_us = orig_time_us / steps
+
+            self._as7343.set('ATIME', ATIME=steps - 1)
+            self._as7343.set('ASTEP', ASTEP=time_us)
+
+        else:
+            raise ValueError("Integration time out of range.")
 
     def set_illumination_led_current(self, current):
         """Set the AS7343 illumination LED current in milliamps.
 
-        :param current: Value in milliamps, one of 12.5, 25, 50 or 100
+        :param current: Value in milliamp from 4mA to 258mA
 
         """
-        self._as7343.set('LED_CONTROL', illumination_current_limit_ma=current)
+        if current > 16:  # TODO: Pick safety limit wisely
+            raise RuntimeError("Please don't melt the lEDs...")
 
-    def set_indicator_led_current(self, current):
-        """Set the AS7343 indicator LED current in milliamps.
-
-        :param current: Value in milliamps, one of 1, 2, 4 or 8
-
-        """
-        self._as7343.set('LED_CONTROL', indicator_current_limit_ma=current)
+        self._as7343.set('LED', LED_DRIVE=current)
 
     def set_illumination_led(self, state):
         """Set the AS7343 illumination LED state.
@@ -522,17 +622,13 @@ class AS7343:
         :param state: True = On, False = Off
 
         """
-        self._as7343.set('LED_CONTROL', illumination_enable=state)
-
-    def set_indicator_led(self, state):
-        """Set the AS7343 indicator LED state.
-
-        :param state: True = On, False = Off
-
-        """
-        self._as7343.set('LED_CONTROL', indicator_enable=state)
+        self._as7343.set('LED', LED_ACT=state)
 
     def get_version(self):
         """Get the hardware type, version and firmware version from the AS7343."""
-        version = self._as7343.get('VERSION')
-        return version.hw_type, version.hw_version, version.fw_version
+        self.bank_select(1)
+        auxid = self._as7343.get('AUXID').AUXID
+        revid = self._as7343.get('REVID').REVID
+        id = self._as7343.get('ID').ID
+        self.bank_select(0)
+        return auxid, revid, id
