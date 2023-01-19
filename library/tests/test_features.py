@@ -1,21 +1,12 @@
 # noqa D100
-import sys
 import mock
-from .tools import SMBusFakeAS7343, CALIBRATED_VALUES
+from .tools import CALIBRATED_VALUES
 
 
-def _setup():
-    global as7343
-    smbus = mock.Mock()
-    smbus.SMBus = SMBusFakeAS7343
-    sys.modules['smbus'] = smbus
+def test_set_integration_time(smbus):
+    """Test the set_integration_time method against various values."""
     from as7343 import AS7343
     as7343 = AS7343()
-
-
-def test_set_integration_time():
-    """Test the set_integration_time method against various values."""
-    _setup()
 
     # Integration time is stored as 2.8ms per lsb
     # so returned values experience quantization
@@ -37,9 +28,10 @@ def test_set_integration_time():
     assert as7343._as7343.INTEGRATION_TIME.get_ms() == (int(99999 * 2.8) & 0xFF) / 2.8
 
 
-def test_set_gain():
+def test_set_gain(smbus):
     """Test the set_gain method against various values."""
-    _setup()
+    from as7343 import AS7343
+    as7343 = AS7343()
 
     as7343.set_gain(1)
     assert as7343._as7343.CONTROL.get_gain_x() == 1
@@ -53,17 +45,19 @@ def test_set_gain():
     assert as7343._as7343.CONTROL.get_gain_x() == 1
 
 
-def test_set_measurement_mode():
+def test_set_measurement_mode(smbus):
     """Test the set_measurement_mode method."""
-    _setup()
+    from as7343 import AS7343
+    as7343 = AS7343()
 
     as7343.set_measurement_mode(2)
     assert as7343._as7343.CONTROL.get_measurement_mode() == 2
 
 
-def test_set_illumination_led_current():
+def test_set_illumination_led_current(smbus):
     """Test the set_illumination_led_current method."""
-    _setup()
+    from as7343 import AS7343
+    as7343 = AS7343()
 
     as7343.set_illumination_led_current(12.5)
     assert as7343._as7343.LED_CONTROL.get_illumination_current_limit_ma() == 12.5
@@ -75,9 +69,10 @@ def test_set_illumination_led_current():
     assert as7343._as7343.LED_CONTROL.get_illumination_current_limit_ma() == 100
 
 
-def test_set_indicator_led_current():
+def test_set_indicator_led_current(smbus):
     """Test the set_indicator_led_current method."""
-    _setup()
+    from as7343 import AS7343
+    as7343 = AS7343()
 
     as7343.set_indicator_led_current(4)
     assert as7343._as7343.LED_CONTROL.get_indicator_current_limit_ma() == 4
@@ -89,33 +84,37 @@ def test_set_indicator_led_current():
     assert as7343._as7343.LED_CONTROL.get_indicator_current_limit_ma() == 1
 
 
-def test_indicator_led():
+def test_indicator_led(smbus):
     """Test the indicator_led method."""
-    _setup()
+    from as7343 import AS7343
+    as7343 = AS7343()
 
     as7343.set_indicator_led(1)
     assert as7343._as7343.LED_CONTROL.get_indicator_enable() == 1
 
 
-def test_illumination_led():
+def test_illumination_led(smbus):
     """Test the illumination_led method."""
-    _setup()
+    from as7343 import AS7343
+    as7343 = AS7343()
 
     as7343.set_illumination_led(1)
     assert as7343._as7343.LED_CONTROL.get_illumination_enable() == 1
 
 
-def test_soft_reset():
+def test_soft_reset(smbus):
     """Test the soft_reset method."""
-    _setup()
+    from as7343 import AS7343
+    as7343 = AS7343()
 
     as7343.soft_reset()
     assert as7343._as7343.CONTROL.get_reset() == 1
 
 
-def test_get_calibrated_values():
+def test_get_calibrated_values(smbus):
     """Test against fake calibrated values stored in hardware mock."""
-    _setup()
+    from as7343 import AS7343
+    as7343 = AS7343()
 
     values = as7343.get_calibrated_values()
 
