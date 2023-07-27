@@ -1,8 +1,10 @@
+import struct
 import sys
+
 import mock
 import pytest
-import struct
 from i2cdevice import MockSMBus
+
 from .tools import CALIBRATED_VALUES
 
 
@@ -12,7 +14,7 @@ class SMBusFakeDevice(MockSMBus):
 
         self.regs = [0b10000001 for _ in range(255)]
 
-        # Virtual registers, thes contain the data actually used
+        # Virtual registers, these contain the data actually used
         self.regs[0x00] = 0x88  # Fake HW type
         self.regs[0x01] = 0x77  # Fake HW version
         self.regs[0x02] = 0xFE  # Fake FW version MSB (Sub, Minor)

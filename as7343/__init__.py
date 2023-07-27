@@ -1,8 +1,8 @@
-"""Library for the AS7343 Visble Light Spectral Sensor."""
-import time
+"""Library for the AS7343 Visible Light Spectral Sensor."""
 import struct
+import time
 
-from i2cdevice import Device, Register, BitField, _int_to_bytes
+from i2cdevice import BitField, Device, Register, _int_to_bytes
 from i2cdevice.adapter import Adapter, LookupAdapter, U16ByteSwapAdapter
 
 __version__ = '0.0.1'
@@ -566,7 +566,7 @@ class AS7343:
     def set_measurement_time(self, time_ms):
         """Set the AS7343 sensor measurement time in milliseconds.
 
-        This time must be large enough to accomodate the sensor integration time.
+        This time must be large enough to accommodate the sensor integration time.
 
         The total final wait time will depend on the number of enabled read cycles.
 
@@ -585,7 +585,7 @@ class AS7343:
         :param time_ms: Time in microseconds from 2.78us to 46639948.8us
 
         """
-        # Interation time comprises a time (in us) called "ASTEP" for some reason,
+        # Integration time comprises a time (in us) called "ASTEP" for some reason,
         # and a repeat count called "ATIME".
         # The ADC full scale is (ASTEP + 1) * (ATIME + 1). (Saturates at 65535)
 

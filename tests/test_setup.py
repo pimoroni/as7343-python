@@ -1,7 +1,4 @@
 # noqa D100
-import sys
-import mock  # noqa: E402
-
 
 def test_fw_info(smbus):
     """Test against fake device information stored in hardware mock."""

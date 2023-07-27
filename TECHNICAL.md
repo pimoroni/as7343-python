@@ -1,6 +1,6 @@
 # Overview
 
-Uses six 16-bit ADCs switched over the 5x5 arrya via SMUX
+Uses six 16-bit ADCs switched over the 5x5 array via SMUX
 and then output sequentially into the 18-entry, 16-bit data registers.
 
 # Channels

@@ -1,5 +1,4 @@
 # noqa D100
-import mock
 from .tools import CALIBRATED_VALUES
 
 

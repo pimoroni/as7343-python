@@ -1,4 +1,5 @@
 import time
+
 from as7343 import AS7343
 
 as7343 = AS7343()
