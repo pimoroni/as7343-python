@@ -53,8 +53,10 @@ class AGAINAdapter(Adapter):
         return 1 << int(value - 1)
 
     def _encode(self, value):
-        if value == 0.5:
+        if value <= 0.5:
             return 0
+        if value >= 2048:
+            return 12
         return int(value).bit_length() & 0x1f
 
 
@@ -69,7 +71,7 @@ class ASTEPAdapter(Adapter):
         return (value + 1) * 2.78
 
     def _encode(self, value):
-        return int((value - 2.78) / 2.78) & 0xfffe
+        return int((value - 2.78) / 2.78) & 0xffff
 
 
 class WTIMEAdapter(Adapter):
@@ -88,10 +90,10 @@ class WTIMEAdapter(Adapter):
 
 class LEDDriveAdapter(Adapter):
     def _decode(self, value):
-        return (value * 2 + 4) & 0xff
+        return (value * 2 + 4)
 
     def _encode(self, value):
-        return int((value - 4) / 2)
+        return int((value - 4) / 2) & 0x7f
 
 
 class FloatAdapter(Adapter):
@@ -596,7 +598,8 @@ class AS7343:
         elif time_us <= 182187.3 * 256:
             orig_time_us = time_us
             steps = 0
-            while time_us > 182187.3 * 256:
+            while time_us > 182187.3:
+                steps += 1
                 time_us = orig_time_us / steps
 
             self._as7343.set('ATIME', ATIME=steps - 1)
