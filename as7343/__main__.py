@@ -1,4 +1,4 @@
-"""Library for the AS7343 Visble Light Spectral Sensor."""
+"""Library for the AS7343 Visible Light Spectral Sensor."""
 import as7343
 
 if __name__ == '__main__':

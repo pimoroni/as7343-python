@@ -1,8 +1,8 @@
-"""Library for the AS7343 Visble Light Spectral Sensor."""
-import time
+"""Library for the AS7343 Visible Light Spectral Sensor."""
 import struct
+import time
 
-from i2cdevice import Device, Register, BitField, _int_to_bytes
+from i2cdevice import BitField, Device, Register, _int_to_bytes
 from i2cdevice.adapter import Adapter, LookupAdapter, U16ByteSwapAdapter
 
 __version__ = '0.0.1'
@@ -53,8 +53,10 @@ class AGAINAdapter(Adapter):
         return 1 << int(value - 1)
 
     def _encode(self, value):
-        if value == 0.5:
+        if value <= 0.5:
             return 0
+        if value >= 2048:
+            return 12
         return int(value).bit_length() & 0x1f
 
 
@@ -69,7 +71,7 @@ class ASTEPAdapter(Adapter):
         return (value + 1) * 2.78
 
     def _encode(self, value):
-        return int((value - 2.78) / 2.78) & 0xfffe
+        return int((value - 2.78) / 2.78) & 0xffff
 
 
 class WTIMEAdapter(Adapter):
@@ -88,10 +90,10 @@ class WTIMEAdapter(Adapter):
 
 class LEDDriveAdapter(Adapter):
     def _decode(self, value):
-        return (value * 2 + 4) & 0xff
+        return (value * 2 + 4)
 
     def _encode(self, value):
-        return int((value - 4) / 2)
+        return int((value - 4) / 2) & 0x7f
 
 
 class FloatAdapter(Adapter):
@@ -566,7 +568,7 @@ class AS7343:
     def set_measurement_time(self, time_ms):
         """Set the AS7343 sensor measurement time in milliseconds.
 
-        This time must be large enough to accomodate the sensor integration time.
+        This time must be large enough to accommodate the sensor integration time.
 
         The total final wait time will depend on the number of enabled read cycles.
 
@@ -585,7 +587,7 @@ class AS7343:
         :param time_ms: Time in microseconds from 2.78us to 46639948.8us
 
         """
-        # Interation time comprises a time (in us) called "ASTEP" for some reason,
+        # Integration time comprises a time (in us) called "ASTEP" for some reason,
         # and a repeat count called "ATIME".
         # The ADC full scale is (ASTEP + 1) * (ATIME + 1). (Saturates at 65535)
 
@@ -596,7 +598,8 @@ class AS7343:
         elif time_us <= 182187.3 * 256:
             orig_time_us = time_us
             steps = 0
-            while time_us > 182187.3 * 256:
+            while time_us > 182187.3:
+                steps += 1
                 time_us = orig_time_us / steps
 
             self._as7343.set('ATIME', ATIME=steps - 1)
