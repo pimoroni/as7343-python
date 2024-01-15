@@ -22,6 +22,6 @@ def smbus():
     """Mock smbus module."""
     smbus = mock.MagicMock()
     smbus.SMBus = SMBusFakeDevice
-    sys.modules['smbus'] = smbus
+    sys.modules['smbus2'] = smbus
     yield smbus
-    del sys.modules['smbus']
+    del sys.modules['smbus2']
