@@ -35,9 +35,7 @@ classifiers = [
     "Topic :: System :: Hardware",
 ]
 dependencies = [
-    "i2cdevice>=0.0.6",
-    "smbus",
-    "RPi.GPIO"
+    "i2cdevice>=1.0.0",
 ]
 
 [project.urls]
@@ -112,6 +110,6 @@ ignore = [
 ]
 
 [pimoroni]
-apt_packages = ["python3-rpi.gpio", "python3-smbus"]
+apt_packages = []
 configtxt = []
 commands = []
