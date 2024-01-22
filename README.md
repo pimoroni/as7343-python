@@ -17,5 +17,5 @@ Latest/development library from GitHub:
 
 * `git clone https://github.com/pimoroni/as7343-python`
 * `cd as7343-python`
-* `sudo ./install.sh --unstable`
+* `./install.sh --unstable`
 
