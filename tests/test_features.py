@@ -31,6 +31,9 @@ def test_set_integration_time(smbus):
     assert round(as7343._as7343.ASTEP.get_ASTEP(), 1) == 99999.4
     assert as7343._as7343.ATIME.get_ATIME() == 1  # Repeat twice
 
+    # Values greater than 46639948.8 are out of range
+    with pytest.raises(ValueError):
+        as7343.set_integration_time(46639948.8 + 1)
 
 def test_set_gain(smbus):
     """Test the set_gain method against various values."""
@@ -103,3 +106,53 @@ def test_soft_reset(smbus):
 
     as7343.soft_reset()
     assert as7343._as7343.CONTROL.get_SW_RESET() == 1
+
+
+def test_agc_gain(smbus):
+    from as7343 import AS7343
+    as7343 = AS7343()
+
+    assert as7343._as7343.AGC_GAIN_MAX.get_AGC_FD_GAIN_MAX() == 0.5
+
+    # AGC_FD_GAIN_MAX is the upper nibble
+    as7343._as7343._i2c.regs[0xD7] = 10 << 4
+    assert as7343._as7343.AGC_GAIN_MAX.get_AGC_FD_GAIN_MAX() == 2048
+
+    as7343._as7343.AGC_GAIN_MAX.set_AGC_FD_GAIN_MAX(1024)
+    assert (as7343._as7343._i2c.regs[0xD7] >> 4) == 9
+
+    as7343._as7343.AGC_GAIN_MAX.set_AGC_FD_GAIN_MAX(0.5)
+    assert (as7343._as7343._i2c.regs[0xD7] >> 4) == 0
+
+
+def test_set_channels(smbus):
+    from as7343 import AS7343
+    as7343 = AS7343()
+
+    as7343.set_channels(6)
+    as7343.set_channels(12)
+    as7343.set_channels(18)
+
+    with pytest.raises(ValueError):
+        as7343.set_channels(17)
+
+
+def test_get_data_timeout(smbus):
+    from as7343 import AS7343
+    as7343 = AS7343()
+
+    as7343.set_channels(6)
+
+    with pytest.raises(TimeoutError):
+        _ = as7343.get_data(timeout=0.5)
+
+
+def test_get_data(smbus):
+    from as7343 import AS7343
+    as7343 = AS7343()
+
+    for num_channels in (6, 12, 18):
+        as7343.set_channels(num_channels)
+        # Set the FIFO level, must be >= read_cycles * 7 or will timeout
+        as7343._as7343._i2c.regs[0xFD] = as7343._read_cycles * 7
+        _ = as7343.get_data()
