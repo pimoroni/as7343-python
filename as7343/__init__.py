@@ -1,8 +1,7 @@
 """Library for the AS7343 Visible Light Spectral Sensor."""
-import struct
 import time
 
-from i2cdevice import BitField, Device, Register, _int_to_bytes
+from i2cdevice import BitField, Device, Register
 from i2cdevice.adapter import Adapter, LookupAdapter, U16ByteSwapAdapter
 
 __version__ = '0.0.1'
@@ -94,14 +93,6 @@ class LEDDriveAdapter(Adapter):
 
     def _encode(self, value):
         return int((value - 4) / 2) & 0x7f
-
-
-class FloatAdapter(Adapter):
-    """Convert a 4 byte register set into a float."""
-
-    def _decode(self, value):
-        b = _int_to_bytes(value, 4)
-        return struct.unpack('>f', bytearray(b))[0]
 
 
 class ResultCycle:
@@ -201,7 +192,7 @@ class ResultCycle3(ResultCycle):
 
 class AS7343:
     def __init__(self, i2c_dev=None):
-        self._as7343 = Device(0x39, bit_width=8, registers=(
+        self._as7343 = Device(0x39, i2c_dev=i2c_dev, bit_width=8, registers=(
             # BANK 1
             Register('AUXID', 0x58, fields=(
                 BitField('AUXID', 0b00001111),   # Auxiliary Identification (0b0000)
@@ -523,35 +514,31 @@ class AS7343:
         self._read_cycles = int(channel_count / 6)
         self._as7343.set('CFG20', auto_SMUX=channel_count)
 
-    def get_data(self):
-        results = list(self.read_fifo())
-        if len(results) == self._read_cycles * 7:
-            if self._read_cycles == 3:
-                return (
-                    dict(ResultCycle1(*results[0:7])),
-                    dict(ResultCycle2(*results[7:14])),
-                    dict(ResultCycle3(*results[14:21])),
-                )
-            elif self._read_cycles == 2:
-                return (
-                    dict(ResultCycle1(*results[0:7])),
-                    dict(ResultCycle2(*results[7:14]))
-                )
-            elif self._read_cycles == 1:
-                return (
-                    dict(ResultCycle1(*results[0:7])),
-                )
-            else:
-                # Uh oh?
-                return None
+    def get_data(self, timeout=5.0):
+        results = list(self.read_fifo(timeout=timeout))
 
-            return results
+        if self._read_cycles == 3:
+            return (
+                dict(ResultCycle1(*results[0:7])),
+                dict(ResultCycle2(*results[7:14])),
+                dict(ResultCycle3(*results[14:21])),
+            )
+        elif self._read_cycles == 2:
+            return (
+                dict(ResultCycle1(*results[0:7])),
+                dict(ResultCycle2(*results[7:14]))
+            )
+        elif self._read_cycles == 1:
+            return (
+                dict(ResultCycle1(*results[0:7])),
+            )
 
-        return None
-
-    def read_fifo(self):
+    def read_fifo(self, timeout=5.0):
+        t_start = time.time()
         while self._as7343.get('FIFO_LVL').FIFO_LVL < self._read_cycles * 7:
             time.sleep(0.001)
+            if time.time() - t_start > timeout:
+                raise TimeoutError(f"Timeout waiting for {self._read_cycles * 7} entries in FIFO.")
 
         while self._as7343.get('FIFO_LVL').FIFO_LVL > 0:
             result = self._as7343.get('FDATA').FDATA
