@@ -1,5 +1,6 @@
 #!/bin/bash
 LIBRARY_NAME=$(grep -m 1 name pyproject.toml | awk -F" = " '{print substr($2,2,length($2)-2)}')
+MODULE_NAME="as7343"
 CONFIG_FILE=config.txt
 CONFIG_DIR="/boot/firmware"
 DATESTAMP=$(date "+%Y-%m-%d-%H-%M-%S")
@@ -57,11 +58,6 @@ find_config() {
 		CONFIG_DIR="/boot"
 		if [ ! -f "$CONFIG_DIR/$CONFIG_FILE" ]; then
 			fatal "Could not find $CONFIG_FILE!"
-		fi
-	else
-		if [ -f "/boot/$CONFIG_FILE" ] && [ ! -L "/boot/$CONFIG_FILE" ]; then
-			warning "Oops! It looks like /boot/$CONFIG_FILE is not a link to $CONFIG_DIR/$CONFIG_FILE"
-			warning "You might want to fix this!"
 		fi
 	fi
 	inform "Using $CONFIG_FILE in $CONFIG_DIR"
@@ -345,7 +341,7 @@ if confirm "Would you like to generate documentation?"; then
 	inform "Installing pdoc. Please wait..."
 	pip_pkg_install pdoc
 	inform "Generating documentation.\n"
-	if $PYTHON -m pdoc "$LIBRARY_NAME" -o "$RESOURCES_DIR/docs" > /dev/null; then
+	if $PYTHON -m pdoc "$MODULE_NAME" -o "$RESOURCES_DIR/docs" > /dev/null; then
 		inform "Documentation saved to $RESOURCES_DIR/docs"
 		success "Done!"
 	else

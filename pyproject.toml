@@ -3,7 +3,7 @@ requires = ["hatchling", "hatch-fancy-pypi-readme"]
 build-backend = "hatchling.build"
 
 [project]
-name = "as7343"
+name = "pimoroni-as7343"
 dynamic = ["version", "readme"]
 description = "python library for the AS7343 spectral sensor"
 license = {file = "LICENSE"}
@@ -109,7 +109,7 @@ ignore = [
     'requirements-dev.txt'
 ]
 
-[pimoroni]
+[tool.pimoroni]
 apt_packages = []
 configtxt = []
 commands = []
