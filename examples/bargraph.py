@@ -19,7 +19,7 @@ BAR_WIDTH = 25
 as7343.set_gain(512)
 as7343.set_integration_time(100 * 1000)
 as7343.set_channels(18)
-as7343.set_illumination_led(True)
+as7343.set_illumination_led(False)
 
 try:
     input = raw_input
@@ -29,13 +29,20 @@ except NameError:
 input("Setting white point baseline.\n\nHold a white sheet of paper ~5cm in front of the sensor and press a key...\n")
 baseline = None
 
+
+def get_values(data):
+    #        Red          Orange       Yellow      Green       Blue        Violet
+    values = [data['f7'], data['f6'], data['fxl'], data['f4'], data['f3'], data['f2']]
+    return values
+
+
 while baseline is None:
     values = as7343.get_data()
     if values is not None:
         data = values[0]
         data.update(values[1])
         data.update(values[2])
-        baseline = [data['f7'], data['fxl'], data['f5'], data['f4'], data['f3'], data['f1']]
+        baseline = get_values(data)
 
 time.sleep(1)
 input("Baseline set. Press a key to continue...\n")
@@ -50,7 +57,7 @@ try:
         data.update(values[1])
         data.update(values[2])
 
-        values = [data['f7'], data['fxl'], data['f5'], data['f4'], data['f3'], data['f1']]
+        values = get_values(data)
         values = [int(x / y * MAX_VALUE) for x, y in zip(list(values), list(baseline))]
         values = [int(min(value, MAX_VALUE) / MAX_VALUE * BAR_WIDTH) for value in values]
         red, orange, yellow, green, blue, violet = [(BAR_CHAR * value) + (' ' * (BAR_WIDTH - value)) for value in values]
