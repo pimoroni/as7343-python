@@ -5,17 +5,49 @@
 [![PyPi Package](https://img.shields.io/pypi/v/pimoroni-as7343.svg)](https://pypi.python.org/pypi/pimoroni-as7343)
 [![Python Versions](https://img.shields.io/pypi/pyversions/pimoroni-as7343.svg)](https://pypi.python.org/pypi/pimoroni-as7343)
 
-Suitable for detecting the properties of ambient light, light passing through a liquid or light reflected from an object the AS7343 spectral sensor has 6 spectral channels at 450 (violet), 500 (blue), 550 (green), 570 (yellow), 600 (orange) and 650nm (red).
+AS7343 is a 14-channel multi-purpose spectral sensor. It can detect 14 spectral channels - 12 in the visible spectrum (VIS) to near-infrared (NIR) range, a clear channel and flicker channel.
 
-# Installing
+You can buy our AS7343 breakout [here](https://shop.pimoroni.com/products/as7343-14-channel-multi-spectral-sensor-breakout)!
 
-Stable library from PyPi:
+## Installing
 
-* Just run `python3 -m pip install pimoroni-as7343`
+### Full install (recommended):
 
-Latest/development library from GitHub:
+We've created an easy installation script that will install all pre-requisites and get your AS7343
+up and running with minimal efforts. To run it, fire up Terminal which you'll find in Menu -> Accessories -> Terminal
+on your Raspberry Pi desktop, as illustrated below:
 
-* `git clone https://github.com/pimoroni/as7343-python`
-* `cd as7343-python`
-* `./install.sh --unstable`
+![Finding the terminal](http://get.pimoroni.com/resources/github-repo-terminal.png)
+
+In the new terminal window type the command exactly as it appears below (check for typos) and follow the on-screen instructions:
+
+```bash
+git clone https://github.com/pimoroni/as7343-python
+cd as7343-python
+./install.sh
+```
+
+**Note** Libraries will be installed in the "pimoroni" virtual environment, you will need to activate it to run examples:
+
+```
+source ~/.virtualenvs/pimoroni/bin/activate
+```
+
+### Development:
+
+If you want to contribute, or like living on the edge of your seat by having the latest code, you can install the development version like so:
+
+```bash
+git clone https://github.com/pimoroni/as7343-python
+cd as7343-python
+./install.sh --unstable
+```
+
+The install script should do it for you, but in some cases you might have to enable the i2c bus.
+
+On a Raspberry Pi you can do that like so:
+
+```
+sudo raspi-config nonint do_i2c 0
+```
 
