@@ -11,10 +11,11 @@ You can buy our AS7343 breakout [here](https://shop.pimoroni.com/products/as7343
 
 ## Installing
 
+We'd recommend using this library with Raspberry Pi OS Bookworm or later. It requires Python ≥3.7.
+
 ### Full install (recommended):
 
-We've created an easy installation script that will install all pre-requisites and get your AS7343
-up and running with minimal efforts. To run it, fire up Terminal which you'll find in Menu -> Accessories -> Terminal
+We've created an easy installation script that will install all pre-requisites and get your AS7343 breakout up and running with minimal efforts. To run it, fire up Terminal which you'll find in Menu -> Accessories -> Terminal
 on your Raspberry Pi desktop, as illustrated below:
 
 ![Finding the terminal](http://get.pimoroni.com/resources/github-repo-terminal.png)
@@ -43,11 +44,17 @@ cd as7343-python
 ./install.sh --unstable
 ```
 
-The install script should do it for you, but in some cases you might have to enable the i2c bus.
+## Install stable library from PyPi and configure manually
 
-On a Raspberry Pi you can do that like so:
+* Set up a virtual environment: `python3 -m venv --system-site-packages $HOME/.virtualenvs/pimoroni`
+* Switch to the virtual environment: `source ~/.virtualenvs/pimoroni/bin/activate`
+* Install the library: `pip install pimoroni-as7343`
 
-```
-sudo raspi-config nonint do_i2c 0
-```
+In some cases you may need to us `sudo` or install pip with: `sudo apt install python3-pip`.
+
+This will not make any configuration changes, so you may also need to enable:
+
+* i2c: `sudo raspi-config nonint do_i2c 0`
+
+You can optionally run `sudo raspi-config` or the graphical Raspberry Pi Configuration UI to enable interfaces.
 
