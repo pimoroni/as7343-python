@@ -111,7 +111,7 @@ class ResultCycle:
 
 class ResultCycle1(ResultCycle):
     """Store a 6-channel AS7343 auto SMUX cycle 1 result."""
-    def __init__(self, fz, fy, fxl, nir, vis_tl, vis_br, astatus):
+    def __init__(self, astatus, fz, fy, fxl, nir, vis_tl, vis_br):
         ResultCycle.__init__(self, vis_tl, vis_br, astatus)
 
         self.fz = fz        # Blue
@@ -138,7 +138,7 @@ class ResultCycle1(ResultCycle):
 
 class ResultCycle2(ResultCycle):
     """Store a 6-channel AS7343 auto SMUX cycle 2 result."""
-    def __init__(self, f2, f3, f4, f6, vis_tl, vis_br, astatus):
+    def __init__(self, astatus, f2, f3, f4, f6, vis_tl, vis_br):
         ResultCycle.__init__(self, vis_tl, vis_br, astatus)
 
         self.f2 = f2        # Violet
@@ -165,7 +165,7 @@ class ResultCycle2(ResultCycle):
 
 class ResultCycle3(ResultCycle):
     """Store an 6-channel AS7343 auto SMUX cycle 3 result."""
-    def __init__(self, f1, f5, f7, f8, vis_tl, vis_br, astatus):
+    def __init__(self, astatus, f1, f7, f8, f5, vis_tl, vis_br):
         ResultCycle.__init__(self, vis_tl, vis_br, astatus)
 
         self.f1 = f1        # Violet
