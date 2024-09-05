@@ -100,9 +100,10 @@ class ResultCycle:
     def __init__(self, vis_tl, vis_br, astatus):
         self.vis_tl = vis_tl
         self.vis_br = vis_br
-        self.astatus = (astatus >> 8) & 0b10001111
+        self.astatus = (astatus & 0b10001111)
         self.saturated = self.astatus & 0b10000000 > 0
         self.gain = self.astatus & 0b00001111
+        self.gain = 1 << (self.gain - 1) if self.gain else 0.5
 
     def __iter__(self):  # noqa D107
         for c in ['vis_tl', 'vis_br', 'saturated', 'gain']:
