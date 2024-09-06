@@ -100,9 +100,10 @@ class ResultCycle:
     def __init__(self, vis_tl, vis_br, astatus):
         self.vis_tl = vis_tl
         self.vis_br = vis_br
-        self.astatus = (astatus >> 8) & 0b10001111
+        self.astatus = (astatus & 0b10001111)
         self.saturated = self.astatus & 0b10000000 > 0
         self.gain = self.astatus & 0b00001111
+        self.gain = 1 << (self.gain - 1) if self.gain else 0.5
 
     def __iter__(self):  # noqa D107
         for c in ['vis_tl', 'vis_br', 'saturated', 'gain']:
@@ -111,7 +112,7 @@ class ResultCycle:
 
 class ResultCycle1(ResultCycle):
     """Store a 6-channel AS7343 auto SMUX cycle 1 result."""
-    def __init__(self, fz, fy, fxl, nir, vis_tl, vis_br, astatus):
+    def __init__(self, astatus, fz, fy, fxl, nir, vis_tl, vis_br):
         ResultCycle.__init__(self, vis_tl, vis_br, astatus)
 
         self.fz = fz        # Blue
@@ -138,7 +139,7 @@ class ResultCycle1(ResultCycle):
 
 class ResultCycle2(ResultCycle):
     """Store a 6-channel AS7343 auto SMUX cycle 2 result."""
-    def __init__(self, f2, f3, f4, f6, vis_tl, vis_br, astatus):
+    def __init__(self, astatus, f2, f3, f4, f6, vis_tl, vis_br):
         ResultCycle.__init__(self, vis_tl, vis_br, astatus)
 
         self.f2 = f2        # Violet
@@ -165,7 +166,7 @@ class ResultCycle2(ResultCycle):
 
 class ResultCycle3(ResultCycle):
     """Store an 6-channel AS7343 auto SMUX cycle 3 result."""
-    def __init__(self, f1, f5, f7, f8, vis_tl, vis_br, astatus):
+    def __init__(self, astatus, f1, f7, f8, f5, vis_tl, vis_br):
         ResultCycle.__init__(self, vis_tl, vis_br, astatus)
 
         self.f1 = f1        # Violet
@@ -437,6 +438,8 @@ class AS7343:
                         ).upper()
                         locals()[name] = key
 
+        self.running = False
+
         self.soft_reset()
 
         auxid, revid, id = self.get_version()
@@ -483,7 +486,6 @@ class AS7343:
             'ENABLE',
             FDEN=False,
             WEN=True,
-            SMUXEN=True,
             SP_EN=True)
 
     def bank_select(self, bank=0):
@@ -514,6 +516,20 @@ class AS7343:
         self._read_cycles = int(channel_count / 6)
         self._as7343.set('CFG20', auto_SMUX=channel_count)
 
+    def start_measurement(self):
+        if self.running:
+            return
+        self.running = True
+        self._as7343.set(
+            'ENABLE',
+            SMUXEN=True)
+
+    def stop_measurement(self):
+        self.running = False
+        self._as7343.set(
+            'ENABLE',
+            SMUXEN=False)
+
     def get_data(self, timeout=5.0):
         results = list(self.read_fifo(timeout=timeout))
 
@@ -534,6 +550,8 @@ class AS7343:
             )
 
     def read_fifo(self, timeout=5.0):
+        self.start_measurement()
+
         t_start = time.time()
         while self._as7343.get('FIFO_LVL').FIFO_LVL < self._read_cycles * 7:
             time.sleep(0.001)
