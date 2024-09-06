@@ -438,6 +438,8 @@ class AS7343:
                         ).upper()
                         locals()[name] = key
 
+        self.running = False
+
         self.soft_reset()
 
         auxid, revid, id = self.get_version()
@@ -484,7 +486,6 @@ class AS7343:
             'ENABLE',
             FDEN=False,
             WEN=True,
-            SMUXEN=True,
             SP_EN=True)
 
     def bank_select(self, bank=0):
@@ -515,6 +516,20 @@ class AS7343:
         self._read_cycles = int(channel_count / 6)
         self._as7343.set('CFG20', auto_SMUX=channel_count)
 
+    def start_measurement(self):
+        if self.running:
+            return
+        self.running = True
+        self._as7343.set(
+            'ENABLE',
+            SMUXEN=True)
+
+    def stop_measurement(self):
+        self.running = False
+        self._as7343.set(
+            'ENABLE',
+            SMUXEN=False)
+
     def get_data(self, timeout=5.0):
         results = list(self.read_fifo(timeout=timeout))
 
@@ -535,6 +550,8 @@ class AS7343:
             )
 
     def read_fifo(self, timeout=5.0):
+        self.start_measurement()
+
         t_start = time.time()
         while self._as7343.get('FIFO_LVL').FIFO_LVL < self._read_cycles * 7:
             time.sleep(0.001)
