@@ -10,13 +10,12 @@ jobs:
   test:
     name: Build (Python ${{ matrix.python }})
     runs-on: ubuntu-latest
-    env:
-      TERM: xterm-256color
     strategy:
       matrix:
         python: ['3.9', '3.10', '3.11']
 
     env:
+      TERM: xterm-256color
       RELEASE_FILE: ${{ github.event.repository.name }}-${{ github.event.release.tag_name || github.sha }}-py${{ matrix.python }}
 
     steps:
