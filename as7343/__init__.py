@@ -105,7 +105,7 @@ class ResultCycle:
         self.gain = self.astatus & 0b00001111
         self.gain = 1 << (self.gain - 1) if self.gain else 0.5
 
-    def __iter__(self):  # noqa D107
+    def __iter__(self):
         for c in ['vis_tl', 'vis_br', 'saturated', 'gain']:
             yield c, getattr(self, c)
 
@@ -130,7 +130,7 @@ class ResultCycle1(ResultCycle):
         self.fxl = int(self.fxl)
         self.nir = int(self.nir)
 
-    def __iter__(self):  # noqa D107
+    def __iter__(self):
         for c in ['fz', 'fy', 'fxl', 'nir']:
             yield c, getattr(self, c)
         for c in ResultCycle.__iter__(self):
@@ -157,7 +157,7 @@ class ResultCycle2(ResultCycle):
         self.f4 = int(self.f4)
         self.f6 = int(self.f6)
 
-    def __iter__(self):  # noqa D107
+    def __iter__(self):
         for c in ['f2', 'f3', 'f4', 'f6']:
             yield c, getattr(self, c)
         for c in ResultCycle.__iter__(self):
@@ -184,7 +184,7 @@ class ResultCycle3(ResultCycle):
         self.f7 = int(self.f7)
         self.f8 = int(self.f8)
 
-    def __iter__(self):  # noqa D107
+    def __iter__(self):
         for c in ['f1', 'f5', 'f7', 'f8']:
             yield c, getattr(self, c)
         for c in ResultCycle.__iter__(self):
@@ -431,11 +431,7 @@ class AS7343:
                 if isinstance(field.adapter, LookupAdapter):
                     for key in field.adapter.lookup_table:
                         value = field.adapter.lookup_table[key]
-                        name = 'AS7343_{register}_{field}_{key}'.format(
-                            register=register.name,
-                            field=field.name,
-                            key=key
-                        ).upper()
+                        name = f'AS7343_{register.name}_{field.name}_{key}'.upper()
                         locals()[name] = key
 
         self.running = False
@@ -447,7 +443,7 @@ class AS7343:
         self._as7343.set('ENABLE', PON=True)
 
         if id != PART_ID:
-            raise RuntimeError("Invalid part ID: 0x{:02x}, expected 0x{:02x}!".format(id, PART_ID))
+            raise RuntimeError(f"Invalid part ID: 0x{id:02x}, expected 0x{PART_ID:02x}!")
 
         self.bank_select(0)  # For registers 0x80 and above
 
@@ -553,7 +549,7 @@ class AS7343:
         self.start_measurement()
 
         t_start = time.time()
-        while self._as7343.get('FIFO_LVL').FIFO_LVL < self._read_cycles * 7:
+        while self._read_cycles * 7 > self._as7343.get('FIFO_LVL').FIFO_LVL:
             time.sleep(0.001)
             if time.time() - t_start > timeout:
                 raise TimeoutError(f"Timeout waiting for {self._read_cycles * 7} entries in FIFO.")
